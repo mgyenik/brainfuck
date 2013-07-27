@@ -1,7 +1,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#define EXEC(__pc) goto *ops[decode[*(__pc++)]];
+#define MAX_RECURSE 64
+
+#define EXEC(__pc)          goto *ops[decode[*(__pc++)]];
+#define PUSH(__stk)         *__stk##_stack++ = pc
+#define POP(__stk)          pc = ++*--__stk##_stack
+#define EMPTY(__stk)        (__stk##_stack == __stk##_base)
 
 enum {
     LANGLE = 0,
@@ -12,6 +17,7 @@ enum {
     GET,
     LBRACE,
     RBRACE,
+    END,
     INVAL,
 };
 
@@ -25,12 +31,15 @@ const int decode[256] = {
     [',']       = GET,
     ['[']       = LBRACE,
     [']']       = RBRACE,
+    ['\0']      = END,
 };
 
 int main(int argc, char **argv) {
     char *pc;
-    char *ptr, *base;
+    unsigned char *ptr, *base;
     int depth;
+    char **left_stack, **left_base;
+    char **right_stack, **right_base;
 
     static const void* ops[] = {
         [LANGLE]    = &&langle_handler,
@@ -42,15 +51,18 @@ int main(int argc, char **argv) {
         [LBRACE]    = &&lbrace_handler,
         [RBRACE]    = &&rbrace_handler,
         [INVAL]     = &&inval_handler,
+        [END]       = &&end_handler,
     };
 
     if (argc != 2) {
-        printf("Bugger off\n");
+        printf("Bugger off, need 2 args and you have %d\n", argc);
         return -1;
     }
 
     pc = argv[1];
-    ptr = base = malloc(100000);
+    ptr = base = malloc(2*1024*1024);
+    left_stack = left_base = malloc(sizeof(char *)*MAX_RECURSE);
+    right_stack = right_base = malloc(sizeof(char *)*MAX_RECURSE);
 
     EXEC(pc);
     langle_handler:
@@ -74,7 +86,7 @@ int main(int argc, char **argv) {
     lbrace_handler:
         if (*ptr == 0) {
             depth = 0;
-            while((*pc != ']') && !depth) {
+            while((*pc != ']') || depth) {
                 if (*pc == '[')
                     depth++;
                 if (*pc == ']')
@@ -83,13 +95,26 @@ int main(int argc, char **argv) {
             }
             pc++;
         }
+        /*
+        PUSH(left);
+        if (*ptr == 0) {
+            depth = 0;
+            while((*pc != ']') && !depth && (*pc != '\0')) {
+                if (*pc == '[')
+                    depth++;
+                if (*pc == ']')
+                    depth--;
+                pc++;
+            }
+        }
+        */
         EXEC(pc);
     rbrace_handler:
         if (*ptr) {
             depth = 0;
             pc--;
             pc--;
-            while((*pc != '[') && !depth) {
+            while((*pc != '[') || depth) {
                 if (*pc == ']')
                     depth++;
                 if (*pc == '[')
@@ -98,8 +123,15 @@ int main(int argc, char **argv) {
             }
             pc++;
         }
+        /*
+        if (*ptr) {
+            POP(left);
+        }
+        */
         EXEC(pc);
     inval_handler:
-    printf("Done\n");
-    free(base);
+        EXEC(pc);
+    end_handler:
+        free(base);
+        return 0;
 }
