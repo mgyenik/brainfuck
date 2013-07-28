@@ -4,9 +4,7 @@
 #define MAX_RECURSE 64
 
 #define EXEC(__pc)          goto *ops[decode[*(__pc++)]];
-#define PUSH(__stk)         *__stk##_stack++ = pc
-#define POP(__stk)          pc = ++*--__stk##_stack
-#define EMPTY(__stk)        (__stk##_stack == __stk##_base)
+#define PUSH(__stk)         *++__stk##_stack = pc
 
 enum {
     LANGLE = 0,
@@ -36,10 +34,10 @@ const int decode[256] = {
 
 int main(int argc, char **argv) {
     char *pc;
+    char *rbrace;
     unsigned char *ptr, *base;
     int depth;
     char **left_stack, **left_base;
-    char **right_stack, **right_base;
 
     static const void* ops[] = {
         [LANGLE]    = &&langle_handler,
@@ -62,7 +60,6 @@ int main(int argc, char **argv) {
     pc = argv[1];
     ptr = base = malloc(2*1024*1024);
     left_stack = left_base = malloc(sizeof(char *)*MAX_RECURSE);
-    right_stack = right_base = malloc(sizeof(char *)*MAX_RECURSE);
 
     EXEC(pc);
     langle_handler:
@@ -94,40 +91,17 @@ int main(int argc, char **argv) {
                 pc++;
             }
             pc++;
+            EXEC(pc);
         }
-        /*
-        PUSH(left);
-        if (*ptr == 0) {
-            depth = 0;
-            while((*pc != ']') && !depth && (*pc != '\0')) {
-                if (*pc == '[')
-                    depth++;
-                if (*pc == ']')
-                    depth--;
-                pc++;
-            }
+        else {
+            PUSH(left);
         }
-        */
         EXEC(pc);
     rbrace_handler:
-        if (*ptr) {
-            depth = 0;
-            pc--;
-            pc--;
-            while((*pc != '[') || depth) {
-                if (*pc == ']')
-                    depth++;
-                if (*pc == '[')
-                    depth--;
-                pc--;
-            }
-            pc++;
-        }
-        /*
-        if (*ptr) {
-            POP(left);
-        }
-        */
+        if (*ptr)
+            pc = *left_stack;
+        else
+            left_stack--;
         EXEC(pc);
     inval_handler:
         EXEC(pc);
