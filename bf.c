@@ -58,7 +58,7 @@ int main(int argc, char **argv) {
     }
 
     pc = argv[1];
-    ptr = base = malloc(2*1024*1024);
+    ptr = base = malloc(30000);
     left_stack = left_base = malloc(sizeof(char *)*MAX_RECURSE);
 
     EXEC(pc);
