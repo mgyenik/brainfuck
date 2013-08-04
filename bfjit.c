@@ -220,4 +220,7 @@ int main(int argc, char **argv) {
     }
     *ptr++ = 0xc3; /* RETQ */
     runcode(code, mem, (u8 *)&putchar, (u8 *)&getchar);
+    munmap(code, 128*1024);
+    free(mem);
+    free(brstack);
 }
