@@ -3,7 +3,7 @@
 
 #define MAX_RECURSE 64
 
-#define EXEC(__pc)          goto *ops[decode[*(__pc++)]];
+#define EXEC(__pc)          goto *ops[*(__pc++)];
 #define PUSH(__stk)         *++__stk##_stack = pc
 
 enum {
@@ -33,7 +33,7 @@ const int decode[256] = {
 };
 
 int main(int argc, char **argv) {
-    char *pc;
+    char *pc, *curr;
     char *rbrace;
     unsigned char *ptr, *base;
     int depth;
@@ -70,6 +70,12 @@ int main(int argc, char **argv) {
         return -1;
     }
 
+    curr = pc;
+    while(*curr) {
+        *curr++ = decode[*curr];
+    }
+    *curr = decode[*curr];
+
     EXEC(pc);
     langle_handler:
         --ptr;
@@ -92,10 +98,10 @@ int main(int argc, char **argv) {
     lbrace_handler:
         if (*ptr == 0) {
             depth = 0;
-            while((*pc != ']') || depth) {
-                if (*pc == '[')
+            while((*pc != RBRACE) || depth) {
+                if (*pc == LBRACE)
                     depth++;
-                if (*pc == ']')
+                if (*pc == RBRACE)
                     depth--;
                 pc++;
             }
