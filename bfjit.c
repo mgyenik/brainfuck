@@ -178,10 +178,24 @@ int main(int argc, char **argv) {
     brstack = malloc(sizeof(branch)*MAX_RECURSE);
     mem = malloc(30000);
 
-    u8 *code = mmap(NULL, 128*1024, PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
-    u8 *ptr = code;
-    bfp = argv[1];
+    if(argc != 2) {
+        printf("Bugger off, need 2 args but you gave %d\n", argc);
+        return -1;
+    }
 
+    u8 *code = mmap(NULL, 128*1024, PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
+    if(code == (u8 *)-1) {
+        printf("Could not mmap!\n");
+        return -1;
+    }
+
+    u8 *ptr = code;
+    if(!ptr) {
+        printf("Could not mmap!\n");
+        return -1;
+    }
+
+    bfp = argv[1];
     while(*bfp) {
         switch(*bfp) {
             case '>':
