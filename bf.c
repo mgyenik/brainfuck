@@ -59,7 +59,16 @@ int main(int argc, char **argv) {
 
     pc = argv[1];
     ptr = base = malloc(30000);
+    if(!base) {
+        printf("Could not malloc base!\n");
+        return -1;
+    }
+
     left_stack = left_base = malloc(sizeof(char *)*MAX_RECURSE);
+    if(!left_stack) {
+        printf("Could not malloc bracket stack!\n");
+        return -1;
+    }
 
     EXEC(pc);
     langle_handler:
@@ -107,5 +116,6 @@ int main(int argc, char **argv) {
         EXEC(pc);
     end_handler:
         free(base);
+        free(left_base);
         return 0;
 }
