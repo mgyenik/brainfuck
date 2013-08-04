@@ -14,6 +14,13 @@
     (__c == ',') \
     )
 
+#define INSTRUCTION(__name, ...) \
+u8 __name##_bin[] = { __VA_ARGS__ }; \
+instruction __name = { \
+    .bytes = __name##_bin, \
+    .blen = sizeof(__name##_bin)/sizeof(__name##_bin[0]), \
+}
+
 typedef unsigned char u8;
 typedef unsigned int u32;
 
@@ -22,7 +29,6 @@ extern void runcode(u8 *code, u8 *machine_mem, u8 *getc, u8 *putc);
 struct instruction {
     u8 *bytes;
     u8 blen;
-    u8 plen;
 };
 
 struct branch {
@@ -33,47 +39,14 @@ struct branch {
 typedef struct instruction instruction;
 typedef struct branch branch;
 
-instruction inc_ptr = {
-    .bytes = (u8[]){0x48, 0x05},
-    .blen = 2,
-    .plen = 4,
-};
-
-instruction dec_ptr = {
-    .bytes = (u8[]){0x48, 0x2d},
-    .blen = 2,
-    .plen = 4,
-};
-
-instruction inc = {
-    .bytes = (u8[]){0x80, 0x00},
-    .blen = 2,
-    .plen = 1,
-};
-
-instruction dec = {
-    .bytes = (u8[]){0x80, 0x28},
-    .blen = 2,
-    .plen = 1,
-};
-
-instruction jne_zero = {
-    .bytes = (u8[]){0x80, 0x38, 0x00, 0x0f, 0x85},
-    .blen = 5,
-    .plen = 4,
-};
-
-instruction je_zero = {
-    .bytes = (u8[]){0x80, 0x38, 0x00, 0x0f, 0x84},
-    .blen = 5,
-    .plen = 4,
-};
-
-instruction put_char = {
-    .bytes = (u8[]){0x50, 0x53, 0x51, 0x52, 0x48, 0x0f, 0xb6, 0x38, 0xff, 0xd2, 0x5a, 0x59, 0x5b, 0x58},
-    .blen = 14,
-    .plen = 0,
-};
+INSTRUCTION(inc_ptr, 0x48, 0x05);
+INSTRUCTION(dec_ptr, 0x48, 0x2d);
+INSTRUCTION(inc, 0x80, 0x00);
+INSTRUCTION(dec, 0x80, 0x28);
+INSTRUCTION(jne_zero, 0x80, 0x38, 0x00, 0x0f, 0x85);
+INSTRUCTION(je_zero, 0x80, 0x38, 0x00, 0x0f, 0x84);
+INSTRUCTION(put_char, 0x50, 0x51, 0x52, 0x48, 0x0f, 0xb6, 0x38, 0xff, 0xd2, 0x5a, 0x59, 0x58);
+INSTRUCTION(get_char, 0x50, 0x51, 0x52, 0x48, 0x0f, 0xb6, 0x38, 0xff, 0xd1, 0x88, 0xc3, 0x5a, 0x59, 0x58, 0x88, 0x18);
 
 u8 *copy_bytes(u8 *buffer, instruction inst) {
     for (int i = 0; i < inst.blen; i++) {
@@ -134,6 +107,7 @@ u8 *jit_put(u8 *buffer) {
 }
 
 u8 *jit_get(u8 *buffer) {
+    buffer = copy_bytes(buffer, get_char);
     return buffer;
 }
 
@@ -175,8 +149,6 @@ int main(int argc, char **argv) {
     char *mem;
     int count;
 
-    brstack = malloc(sizeof(branch)*MAX_RECURSE);
-    mem = malloc(30000);
 
     if(argc != 2) {
         printf("Bugger off, need 2 args but you gave %d\n", argc);
@@ -184,16 +156,24 @@ int main(int argc, char **argv) {
     }
 
     u8 *code = mmap(NULL, 128*1024, PROT_WRITE | PROT_EXEC, MAP_ANON | MAP_PRIVATE, -1, 0);
+    u8 *ptr = code;
     if(code == (u8 *)-1) {
         printf("Could not mmap!\n");
         return -1;
     }
 
-    u8 *ptr = code;
-    if(!ptr) {
-        printf("Could not mmap!\n");
+    mem = malloc(30000);
+    if(!mem) {
+        printf("Could not allocate machine memory!\n");
         return -1;
     }
+
+    brstack = malloc(sizeof(branch)*MAX_RECURSE);
+    if(!brstack) {
+        printf("Could not allocate branch stack!\n");
+        return -1;
+    }
+
 
     bfp = argv[1];
     while(*bfp) {
@@ -225,7 +205,7 @@ int main(int argc, char **argv) {
                 ptr = jit_put(ptr);
                 break;
             case ',':
-                printf("ERROR\n");
+                ptr = jit_get(ptr);
                 break;
             default:
                 break;
