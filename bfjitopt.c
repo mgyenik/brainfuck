@@ -39,13 +39,14 @@ struct branch {
 };
 
 u8 unroller_counts[256];
-signed char accumulator[30000];
+signed char accarray[60000];
+signed char *accumulator = &accarray[29999];
 
 typedef struct instruction instruction;
 typedef struct branch branch;
 
-INSTRUCTION(inc, 0x83, 0x80);
-INSTRUCTION(dec, 0x83, 0xa8);
+INSTRUCTION(inc, 0x80, 0x80);
+INSTRUCTION(dec, 0x80, 0xa8);
 INSTRUCTION(zero_check, 0x80, 0x38);
 INSTRUCTION(frame_add, 0x48, 0x05);
 INSTRUCTION(frame_sub, 0x48, 0x2d);
@@ -230,6 +231,7 @@ int main(int argc, char **argv) {
     int min;
     int max;
 
+    vpointer = 0;
     min = 30000;
     max = 0;
     if(argc != 2) {
@@ -261,28 +263,20 @@ int main(int argc, char **argv) {
     while(*bfp) {
         switch(*bfp) {
             case '>':
-                //bfp = get_reps(bfp, '>', &count);
-                //ptr = jit_inc_ptr(ptr, count);
                 vpointer++;
                 break;
             case '<':
-                //bfp = get_reps(bfp, '<', &count);
-                //ptr = jit_dec_ptr(ptr, count);
                 vpointer--;
                 break;
             case '+':
-                //bfp = get_reps(bfp, '+', &count);
                 accumulator[vpointer]++;
                 min = (vpointer < min) ? vpointer : min;
                 max = (vpointer > max) ? vpointer : max;
-                //ptr = jit_inc(ptr, count);
                 break;
             case '-':
-                //bfp = get_reps(bfp, '-', &count);
                 accumulator[vpointer]--;
                 min = (vpointer < min) ? vpointer : min;
                 max = (vpointer > max) ? vpointer : max;
-                //ptr = jit_dec(ptr, count);
                 break;
             case '[':
                 //balanced_loop_unroll(bfp);

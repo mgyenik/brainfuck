@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/mman.h>
 
 #define MAX_RECURSE 128
@@ -35,6 +36,8 @@ struct branch {
     u8 *target_loc;
     u8 *patch_loc;
 };
+
+u8 unroller_counts[256];
 
 typedef struct instruction instruction;
 typedef struct branch branch;
@@ -130,6 +133,28 @@ void link_branches(branch *b_start, branch *b_end) {
     *patch++ = (patchval >>24) & 0xff;
 };
 
+char *balanced_loop_unroll(char *loop_start) {
+    char *ptr = 0;
+    u8 counts[256];
+
+    ptr = loop_start;
+    memset(counts, 0, 256);
+
+    while(*ptr != ']') {
+        if (*ptr == '[') {
+            balanced_loop_unroll(ptr);
+            
+        }
+        counts[*ptr]++;
+        ptr++;
+    }
+
+    if (counts['>'] == counts['<'])
+        printf("Balanced loop detected: %d\n", counts['>']);
+
+    return 0;
+}
+
 char *get_reps(char *ptr, char c, int *count) {
     int total = 0;
 
@@ -195,6 +220,7 @@ int main(int argc, char **argv) {
                 ptr = jit_dec(ptr, count);
                 break;
             case '[':
+                //balanced_loop_unroll(bfp);
                 ptr = jit_start_loop(ptr, brstack++);
                 break;
             case ']':
@@ -213,6 +239,7 @@ int main(int argc, char **argv) {
         bfp++;
     }
     *ptr++ = 0xc3; /* RETQ */
+    //printf("%d\n", ptr - code);
     runcode(code, mem, (u8 *)&putchar, (u8 *)&getchar);
     munmap(code, 128*1024);
     free(mem);
