@@ -137,7 +137,14 @@ u8 *jit_put(u8 *buffer, int offset) {
 }
 
 u8 *jit_get(u8 *buffer, int offset) {
+    buffer = copy_bytes(buffer, push_machine);
     buffer = copy_bytes(buffer, get_char_call);
+    buffer = copy_bytes(buffer, pop_machine);
+    buffer = copy_bytes(buffer, get_char_save);
+    *buffer++ = offset & 0xff;
+    *buffer++ = (offset >> 8) & 0xff;
+    *buffer++ = (offset >>16) & 0xff;
+    *buffer++ = (offset >>24) & 0xff;
     return buffer;
 }
 
