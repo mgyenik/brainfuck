@@ -3,6 +3,14 @@
 #include <string.h>
 #include <sys/mman.h>
 
+//#define TRACE
+
+#ifdef TRACE
+#define trace printf
+#else
+#define trace(...)
+#endif
+
 #define MAX_RECURSE 128
 #define valid(__c) ( \
     (__c == '>') || \
@@ -14,6 +22,12 @@
     (__c == '.') || \
     (__c == ',') \
     )
+
+#define put32(__b, __v) \
+    *(__b)++ = (__v) & 0xff; \
+    *(__b)++ = ((__v) >> 8) & 0xff; \
+    *(__b)++ = ((__v) >>16) & 0xff; \
+    *(__b)++ = ((__v) >>24) & 0xff;
 
 #define INSTRUCTION(__name, ...) \
 u8 __name##_bin[] = { __VA_ARGS__ }; \
@@ -58,6 +72,11 @@ INSTRUCTION(put_char_prep, 0x48, 0x0f, 0xb6, 0xb8);
 INSTRUCTION(put_char_call, 0xff, 0xd2);
 INSTRUCTION(get_char_call, 0xff, 0xd1, 0x88, 0xc3);
 INSTRUCTION(get_char_save, 0x88, 0x98); /* Must be done after machine state restoration */
+INSTRUCTION(unroll_loop_begin, 0x49, 0x89, 0xc2);
+INSTRUCTION(unroll_loop_mul, 0x41, 0x8a, 0x02, 0x41, 0xf6, 0xa2);
+INSTRUCTION(unroll_loop_sto, 0x41, 0x88, 0x82);
+INSTRUCTION(unroll_loop_end, 0x4c, 0x89, 0xd0);
+INSTRUCTION(clear, 0xc6, 0x80);
 
 u8 *copy_bytes(u8 *buffer, instruction inst) {
     for (int i = 0; i < inst.blen; i++) {
@@ -68,38 +87,26 @@ u8 *copy_bytes(u8 *buffer, instruction inst) {
 
 u8 *jit_inc(u8 *buffer, u8 amount, int offset) {
     buffer = copy_bytes(buffer, inc);
-    *buffer++ = offset & 0xff;
-    *buffer++ = (offset >> 8) & 0xff;
-    *buffer++ = (offset >>16) & 0xff;
-    *buffer++ = (offset >>24) & 0xff;
+    put32(buffer, offset);
     *buffer++ = amount;
     return buffer;
 }
 
 u8 *jit_frame_add(u8 *buffer, int amount) {
     buffer = copy_bytes(buffer, frame_add);
-    *buffer++ = amount & 0xff;
-    *buffer++ = (amount >> 8) & 0xff;
-    *buffer++ = (amount >>16) & 0xff;
-    *buffer++ = (amount >>24) & 0xff;
+    put32(buffer, amount);
     return buffer;
 }
 
 u8 *jit_frame_sub(u8 *buffer, int amount) {
     buffer = copy_bytes(buffer, frame_sub);
-    *buffer++ = amount & 0xff;
-    *buffer++ = (amount >> 8) & 0xff;
-    *buffer++ = (amount >>16) & 0xff;
-    *buffer++ = (amount >>24) & 0xff;
+    put32(buffer, amount);
     return buffer;
 }
 
 u8 *jit_dec(u8 *buffer, u8 amount, int offset) {
     buffer = copy_bytes(buffer, dec);
-    *buffer++ = offset & 0xff;
-    *buffer++ = (offset >> 8) & 0xff;
-    *buffer++ = (offset >>16) & 0xff;
-    *buffer++ = (offset >>24) & 0xff;
+    put32(buffer, offset);
     *buffer++ = amount;
     return buffer;
 }
@@ -127,10 +134,7 @@ u8 *jit_end_loop(u8 *buffer, branch *b, int offset) {
 u8 *jit_put(u8 *buffer, int offset) {
     buffer = copy_bytes(buffer, push_machine);
     buffer = copy_bytes(buffer, put_char_prep);
-    *buffer++ = offset & 0xff;
-    *buffer++ = (offset >> 8) & 0xff;
-    *buffer++ = (offset >>16) & 0xff;
-    *buffer++ = (offset >>24) & 0xff;
+    put32(buffer, offset);
     buffer = copy_bytes(buffer, put_char_call);
     buffer = copy_bytes(buffer, pop_machine);
     return buffer;
@@ -141,10 +145,14 @@ u8 *jit_get(u8 *buffer, int offset) {
     buffer = copy_bytes(buffer, get_char_call);
     buffer = copy_bytes(buffer, pop_machine);
     buffer = copy_bytes(buffer, get_char_save);
-    *buffer++ = offset & 0xff;
-    *buffer++ = (offset >> 8) & 0xff;
-    *buffer++ = (offset >>16) & 0xff;
-    *buffer++ = (offset >>24) & 0xff;
+    put32(buffer, offset);
+    return buffer;
+}
+
+u8 *jit_clear(u8 *buffer, int offset) {
+    buffer = copy_bytes(buffer, clear);
+    put32(buffer, offset);
+    *buffer++ = 0x00;
     return buffer;
 }
 
@@ -154,52 +162,12 @@ void link_branches(branch *b_start, branch *b_end) {
 
     patchval = b_end->target_loc - b_start->target_loc;
     patch = b_start->patch_loc;
-    *patch++ = patchval & 0xff;
-    *patch++ = (patchval >> 8) & 0xff;
-    *patch++ = (patchval >>16) & 0xff;
-    *patch++ = (patchval >>24) & 0xff;
+    put32(patch, patchval);
 
     patchval = -patchval;
     patch = b_end->patch_loc;
-    *patch++ = patchval & 0xff;
-    *patch++ = (patchval >> 8) & 0xff;
-    *patch++ = (patchval >>16) & 0xff;
-    *patch++ = (patchval >>24) & 0xff;
+    put32(patch, patchval);
 };
-
-char *balanced_loop_unroll(char *loop_start) {
-    char *ptr = 0;
-    u8 counts[256];
-
-    ptr = loop_start;
-    memset(counts, 0, 256);
-
-    while(*ptr != ']') {
-        if (*ptr == '[') {
-            balanced_loop_unroll(ptr);
-            
-        }
-        counts[*ptr]++;
-        ptr++;
-    }
-
-    if (counts['>'] == counts['<'])
-        printf("Balanced loop detected: %d\n", counts['>']);
-
-    return 0;
-}
-
-char *get_reps(char *ptr, char c, int *count) {
-    int total = 0;
-
-    while(*ptr && ((*ptr == c) || !valid(*ptr))) {
-        if(valid(*ptr))
-            total++;
-        ptr++;
-    }
-    *count = total;
-    return --ptr; /* lol */
-}
 
 u8 *emit_frame(u8 *buffer, signed char *acc, int *min, int *max, int *offset)
 {
@@ -227,6 +195,57 @@ u8 *emit_frame(u8 *buffer, signed char *acc, int *min, int *max, int *offset)
     return buffer;
 }
 
+int balanced_loop_unroll(char **loop_start, u8 **buffer, int *vp) {
+    char *ptr;
+    int vpointer;
+    u8 counts[256];
+
+    ptr = *loop_start + 1;
+    memset(counts, 0, 256);
+
+    while(*ptr != ']') {
+        if (*ptr == '[') {
+            trace("Loop not inner-most loop\n");
+            return 0; /* Fail out, can't do nested loops yet */
+        }
+        counts[*ptr]++;
+        ptr++;
+    }
+
+    if (counts['>'] == counts['<']) {
+        if (counts['>'] == 0) {
+            *buffer = jit_clear(*buffer, *vp);
+            *loop_start = ptr;
+            trace("deleting [-], %c%c%c|%c|%c%c%c\n",
+                *(ptr-3),
+                *(ptr-2),
+                *(ptr-1),
+                *(ptr),
+                *(ptr+1),
+                *(ptr+2),
+                *(ptr+3));
+            return 1;
+        }
+        trace("Balanced loop detected: %d\n", counts['>']);
+        return 0; /* CHANGEME TODO XXX */
+    }
+
+    trace("Loop not balanced\n");
+    return 0;
+}
+
+char *get_reps(char *ptr, char c, int *count) {
+    int total = 0;
+
+    while(*ptr && ((*ptr == c) || !valid(*ptr))) {
+        if(valid(*ptr))
+            total++;
+        ptr++;
+    }
+    *count = total;
+    return --ptr; /* lol */
+}
+
 int main(int argc, char **argv) {
     branch *brstack;
     branch closer;
@@ -237,7 +256,11 @@ int main(int argc, char **argv) {
     int frame;
     int min;
     int max;
+    int startloops;
+    int endloops;
 
+    startloops = 0;
+    endloops = 0;
     vpointer = 0;
     min = 30000;
     max = 0;
@@ -286,14 +309,17 @@ int main(int argc, char **argv) {
                 max = (vpointer > max) ? vpointer : max;
                 break;
             case '[':
-                //balanced_loop_unroll(bfp);
                 ptr = emit_frame(ptr, accumulator, &min, &max, &vpointer);
-                ptr = jit_start_loop(ptr, brstack++, vpointer);
+                if (!balanced_loop_unroll(&bfp, &ptr, &vpointer)) {
+                    ptr = jit_start_loop(ptr, brstack++, vpointer);
+                    startloops++;
+                }
                 break;
             case ']':
                 ptr = emit_frame(ptr, accumulator, &min, &max, &vpointer);
                 ptr = jit_end_loop(ptr, &closer, vpointer);
                 link_branches(--brstack, &closer);
+                endloops++;
                 break;
             case '.':
                 ptr = emit_frame(ptr, accumulator, &min, &max, &vpointer);
@@ -309,6 +335,7 @@ int main(int argc, char **argv) {
         bfp++;
     }
     *ptr++ = 0xc3; /* RETQ */
+    trace("startloops: %d endloops: %d\n", startloops, endloops);
     runcode(code, mem, (u8 *)&putchar, (u8 *)&getchar);
     munmap(code, 128*1024);
     free(mem);
